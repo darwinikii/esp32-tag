@@ -23,7 +23,7 @@ class FcmReceiver:
         # Define Firebase project configuration
         project_id = "google.com:api-project-289722593072"
         app_id = "1:289722593072:android:3cfcf5bc359f0308"
-        api_key = "AIzaSyD_gko3P392v6how2H7UpdeXQ0v2HLettc"
+        api_key = "AIzaSyD_gko3P392v6how2H7UpdeXQ0v2HLettc" # u found a api key congrats its not mine :O
         message_sender_id = "289722593072"
 
         fcm_config = FcmRegisterConfig(
