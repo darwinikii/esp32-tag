@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Konum Haritası</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        padding: 20px;
+        background-color: #f0f2f5;
+        color: #333;
+      }
+      h1 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+      }
+      #map {
+        height: 600px;
+        width: 90%;
+        max-width: 1000px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 30px;
+      }
+      .controls {
+        width: 90%;
+        max-width: 1000px;
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .controls label {
+        font-weight: bold;
+        color: #555;
+      }
+      #timeSlider {
+        width: 100%;
+        -webkit-appearance: none;
+        height: 8px;
+        background: #d3d3d3;
+        outline: none;
+        opacity: 0.7;
+        -webkit-transition: 0.2s;
+        transition: opacity 0.2s;
+        border-radius: 5px;
+      }
+      #timeSlider:hover {
+        opacity: 1;
+      }
+      #timeSlider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        background: #3498db;
+        cursor: pointer;
+        border-radius: 50%;
+        border: 2px solid #ffffff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      }
+      #timeSlider::-moz-range-thumb {
+        width: 20px;
+        height: 20px;
+        background: #3498db;
+        cursor: pointer;
+        border-radius: 50%;
+        border: 2px solid #ffffff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      }
+      #currentDateDisplay {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #3498db;
+      }
+      #deviceSelect,
+      #timeRangeSelect {
+        width: 100%;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        font-size: 1em;
+      }
+      .loading-message,
+      .error-message {
+        color: #e74c3c;
+        font-weight: bold;
+        margin-top: 10px;
+      }
+      .loading-message {
+        color: #3498db;
+      }
+      .slider-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+      }
+      .refresh-button {
+        padding: 8px 12px;
+        background-color: #28a745; /* Green color for refresh */
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background-color 0.2s ease;
+      }
+      .refresh-button:hover {
+        background-color: #218838;
+      }
+      .refresh-button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      /* Styles for the new filter checkboxes */
+      .filter-options {
+        display: flex;
+        gap: 20px;
+        margin-top: 15px;
+        flex-wrap: wrap; /* Allows checkboxes to wrap on smaller screens */
+        justify-content: center;
+      }
+
+      .filter-option {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      /* Responsive adjustments */
+      @media (max-width: 768px) {
+        #map,
+        .controls {
+          width: 95%;
+        }
+        .filter-options {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Konum Verileri Haritası</h1>
+    <div id="map"></div>
+
+    <div class="controls">
+      <label for="deviceSelect">Cihaz Seçimi:</label>
+      <select id="deviceSelect">
+        <option value="">Cihazlar Yükleniyor...</option>
+      </select>
+      <p class="loading-message" id="loadingStatus"></p>
+
+      <label for="timeRangeSelect">Zaman Aralığı:</label>
+      <select id="timeRangeSelect">
+        <option value="all">Tüm Zamanlar</option>
+        <option value="3600">Son 1 Saat</option>
+        <option value="43200">Son 12 Saat</option>
+        <option value="86400">Son 1 Gün</option>
+        <option value="172800">Son 2 Gün</option>
+        <option value="345600">Son 4 Gün</option>
+        <option value="604800">Son 1 Hafta</option>
+        <option value="1209600">Son 2 Hafta</option>
+        <option value="2592000">Son 1 Ay</option>
+      </select>
+
+      <label for="timeSlider">Seçilen Tarih:</label>
+      <div class="slider-group">
+        <span id="currentDateDisplay"></span>
+        <input type="range" id="timeSlider" disabled />
+        <button id="refreshButton" class="refresh-button" disabled>
+          Yenile
+        </button>
+      </div>
+
+      <div class="filter-options">
+        <div class="filter-option">
+          <input type="checkbox" id="showGoogle" value="google" checked /><label
+            for="showGoogle"
+            >Google Konumları</label
+          >
+        </div>
+        <div class="filter-option">
+          <input type="checkbox" id="showApple" value="apple" checked /><label
+            for="showApple"
+            >Apple Konumları</label
+          >
+        </div>
+        <div class="filter-option">
+          <input type="checkbox" id="showMixed" value="mixed" checked /><label
+            for="showMixed"
+            >Karışık Konumlar</label
+          >
+        </div>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+
+    <script>
+      POST_PROCESS_DEBUG = false;
+      TIMESLIDER_STEP = 10;
+
+      class KalmanFilter2D {
+        constructor(dt = 1.0, processNoise = 1e-2, measurementNoise = 1e-1) {
+          // Zaman aralığı
+          this.dt = dt;
+
+          // Durum vektörü: [lat, lat_vel, lon, lon_vel]
+          this.x = math.zeros(4, 1);
+
+          // Geçiş matrisi
+          this.F = math.matrix([
+            [1, dt, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, dt],
+            [0, 0, 0, 1],
+          ]);
+
+          // Ölçüm matrisi
+          this.H = math.matrix([
+            [1, 0, 0, 0],
+            [0, 0, 1, 0],
+          ]);
+
+          // Ölçüm gürültüsü kovaryans matrisi (R)
+          this.R = math.multiply(math.identity(2), measurementNoise);
+
+          // Süreç gürültüsü kovaryans matrisi (Q)
+          this.Q = math.multiply(math.identity(4), processNoise);
+
+          // Belirsizlik kovaryans matrisi (P)
+          this.P = math.multiply(math.identity(4), 1);
+        }
+
+        initialize(lat, lon) {
+          this.x = math.matrix([[lat], [0], [lon], [0]]);
+        }
+
+        predict() {
+          this.x = math.multiply(this.F, this.x);
+          this.P = math.add(
+            math.multiply(
+              math.multiply(this.F, this.P),
+              math.transpose(this.F)
+            ),
+            this.Q
+          );
+        }
+
+        update(z) {
+          // z: [lat, lon]
+          const zMatrix = math.matrix([[z[0]], [z[1]]]);
+          const y = math.subtract(zMatrix, math.multiply(this.H, this.x)); // ölçüm kalıntısı
+
+          const S = math.add(
+            math.multiply(
+              math.multiply(this.H, this.P),
+              math.transpose(this.H)
+            ),
+            this.R
+          );
+
+          const K = math.multiply(
+            math.multiply(this.P, math.transpose(this.H)),
+            math.inv(S)
+          );
+
+          this.x = math.add(this.x, math.multiply(K, y));
+
+          const I = math.identity(4);
+          this.P = math.multiply(
+            math.subtract(I, math.multiply(K, this.H)),
+            this.P
+          );
+        }
+
+        getState() {
+          return {
+            latitude: this.x.get([0, 0]),
+            longitude: this.x.get([2, 0]),
+          };
+        }
+      }
+
+      function saniyeOrtalama(veriler, windowSecond = 10) {
+        const sonuc = [];
+        var pencere = [];
+
+        veriler.sort((a, b) => a.timestamp - b.timestamp);
+        for (let i = 0; i < veriler.length; i++) {
+          if (pencere.length > 0) {
+            if (
+              Math.abs(pencere[0].timestamp - veriler[i].timestamp) <
+              windowSecond
+            ) {
+              pencere.push(veriler[i]);
+            } else {
+              const ortTime =
+                pencere.reduce((acc, p) => acc + p.timestamp, 0) /
+                pencere.length;
+              const ortLat =
+                pencere.reduce((acc, p) => acc + p.location.latitude, 0) /
+                pencere.length;
+              const ortLon =
+                pencere.reduce((acc, p) => acc + p.location.longitude, 0) /
+                pencere.length;
+
+              var altList = pencere
+                .map((p) => p.location.altitude)
+                .filter((a) => a !== null);
+              const ortAlt =
+                altList.reduce((acc, p) => acc + p, 0) / altList.length;
+
+              const ortAcc =
+                pencere.reduce((acc, p) => acc + p.location.accuracy, 0) /
+                pencere.length;
+
+              var child = pencere.map((p) => p.type);
+              for (p of pencere) {
+                if (p.child) {
+                  child.concat(p.child);
+                }
+              }
+
+              sonuc.push({
+                type: pencere.length == 1 ? pencere[0].type : "filter",
+                child: child.length == 1 ? undefined : child,
+                timestamp: ortTime,
+
+                location: {
+                  latitude: ortLat,
+                  longitude: ortLon,
+                  altitude: ortAlt,
+                  accuracy: ortAcc,
+                },
+              });
+
+              pencere = [];
+            }
+          } else {
+            pencere.push(veriler[i]);
+          }
+        }
+
+        return sonuc;
+      }
+
+      function saniyeOrtalamaKalman2D(veriler, windowSecond = 300) {
+        const sonuc = [];
+        let pencere = [];
+
+        veriler.sort((a, b) => a.timestamp - b.timestamp);
+
+        for (let i = 0; i < veriler.length; i++) {
+          const v = veriler[i];
+
+          if (pencere.length > 0) {
+            if (Math.abs(v.timestamp - pencere[0].timestamp) < windowSecond) {
+              pencere.push(v);
+            } else {
+              const kf = new KalmanFilter2D();
+
+              const ilk = pencere[0];
+              kf.initialize(ilk.location.latitude, ilk.location.longitude);
+
+              let prevTime = ilk.timestamp;
+
+              for (const p of pencere) {
+                const dt = Math.max(p.timestamp - prevTime, 1e-6);
+                kf.dt = dt;
+                kf.F = math.matrix([
+                  [1, dt, 0, 0],
+                  [0, 1, 0, 0],
+                  [0, 0, 1, dt],
+                  [0, 0, 0, 1],
+                ]);
+
+                kf.predict();
+                kf.update([p.location.latitude, p.location.longitude]);
+
+                const { latitude, longitude } = kf.getState();
+
+                sonuc.push(
+                  Object.assign(p, {
+                    location: Object.assign(p.location, {
+                      latitude,
+                      longitude,
+                    }),
+                  })
+                );
+
+                prevTime = p.timestamp;
+              }
+
+              // pencereyi sıfırla ve yeni değeri başlat
+              pencere = [];
+            }
+          } else {
+            pencere.push(v);
+          }
+        }
+
+        return sonuc;
+      }
+
+      function degreesToRadians(degrees) {
+        return degrees * (Math.PI / 180);
+      }
+
+      function radiansToDegrees(radians) {
+        return radians * (180 / Math.PI);
+      }
+
+      function haversine(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const phi1 = degreesToRadians(lat1);
+        const phi2 = degreesToRadians(lat2);
+        const dPhi = degreesToRadians(lat2 - lat1);
+        const dLambda = degreesToRadians(lon2 - lon1);
+
+        const a =
+          Math.sin(dPhi / 2) ** 2 +
+          Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c;
+      }
+
+      function circleIntersection(lat1, lon1, r1, lat2, lon2, r2) {
+        const d = haversine(lat1, lon1, lat2, lon2);
+        return Math.abs(r1 - r2) < d && d < r1 + r2;
+      }
+
+      function intersectionRadius(lat1, lon1, r1, lat2, lon2, r2) {
+        const d = haversine(lat1, lon1, lat2, lon2);
+        if (Math.abs(r1 - r2) < d && d < r1 + r2) {
+          return (r1 + r2 - d) / 2;
+        }
+        return 0;
+      }
+
+      function geoMidpoint(lat1, lon1, lat2, lon2) {
+        lat1 = degreesToRadians(lat1);
+        lon1 = degreesToRadians(lon1);
+        lat2 = degreesToRadians(lat2);
+        lon2 = degreesToRadians(lon2);
+
+        const x1 = Math.cos(lat1) * Math.cos(lon1);
+        const y1 = Math.cos(lat1) * Math.sin(lon1);
+        const z1 = Math.sin(lat1);
+
+        const x2 = Math.cos(lat2) * Math.cos(lon2);
+        const y2 = Math.cos(lat2) * Math.sin(lon2);
+        const z2 = Math.sin(lat2);
+
+        const x = (x1 + x2) / 2;
+        const y = (y1 + y2) / 2;
+        const z = (z1 + z2) / 2;
+
+        const lon = Math.atan2(y, x);
+        const hyp = Math.sqrt(x * x + y * y);
+        const lat = Math.atan2(z, hyp);
+
+        return [(lat * 180) / Math.PI, (lon * 180) / Math.PI];
+      }
+
+      function geoMidpointWeighted(lat1, lon1, weight1, lat2, lon2, weight2) {
+        lat1 = degreesToRadians(lat1);
+        lon1 = degreesToRadians(lon1);
+        lat2 = degreesToRadians(lat2);
+        lon2 = degreesToRadians(lon2);
+
+        const x1 = Math.cos(lat1) * Math.cos(lon1);
+        const y1 = Math.cos(lat1) * Math.sin(lon1);
+        const z1 = Math.sin(lat1);
+
+        const x2 = Math.cos(lat2) * Math.cos(lon2);
+        const y2 = Math.cos(lat2) * Math.sin(lon2);
+        const z2 = Math.sin(lat2);
+
+        const totalWeight = weight1 + weight2;
+        const x = (x1 * weight1 + x2 * weight2) / totalWeight;
+        const y = (y1 * weight1 + y2 * weight2) / totalWeight;
+        const z = (z1 * weight1 + z2 * weight2) / totalWeight;
+
+        const lon = Math.atan2(y, x);
+        const hyp = Math.sqrt(x * x + y * y);
+        const lat = Math.atan2(z, hyp);
+
+        return [(lat * 180) / Math.PI, (lon * 180) / Math.PI];
+      }
+
+      function geoMidpointMultiple(latitudes, longitudes) {
+        const latRads = latitudes.map(degreesToRadians);
+        const lonRads = longitudes.map(degreesToRadians);
+
+        const x =
+          latRads.reduce(
+            (sum, lat, i) => sum + Math.cos(lat) * Math.cos(lonRads[i]),
+            0
+          ) / latitudes.length;
+        const y =
+          latRads.reduce(
+            (sum, lat, i) => sum + Math.cos(lat) * Math.sin(lonRads[i]),
+            0
+          ) / latitudes.length;
+        const z =
+          latRads.reduce((sum, lat) => sum + Math.sin(lat), 0) /
+          latitudes.length;
+
+        const lon = Math.atan2(y, x);
+        const hyp = Math.sqrt(x * x + y * y);
+        const lat = Math.atan2(z, hyp);
+
+        return [(lat * 180) / Math.PI, (lon * 180) / Math.PI];
+      }
+
+      function pointToPointDistanceCartesian(p1x, p1y, p2x, p2y) {
+        return Math.sqrt((p1x - p2x) ** 2 + (p1y - p2y) ** 2);
+      }
+
+      function convertCartesianToLatLon(
+        points,
+        centerLat,
+        centerLon,
+        metersPerDegLat,
+        metersPerDegLon
+      ) {
+        return points.map(([x, y]) => [
+          centerLat + y / metersPerDegLat,
+          centerLon + x / metersPerDegLon,
+        ]);
+      }
+
+      function lineCircleSegmentIntersection(
+        lat1,
+        lon1,
+        lat2,
+        lon2,
+        centerLat,
+        centerLon,
+        radiusMeters
+      ) {
+        const epsilon = 1e-9;
+        const METERS_PER_DEGREE_LAT = 111320; // Yaklaşık sabit
+        const avgLatRad = degreesToRadians((lat1 + lat2 + centerLat) / 3);
+        const METERS_PER_DEGREE_LON =
+          METERS_PER_DEGREE_LAT * Math.cos(avgLatRad);
+
+        // Koordinatları yerel Kartezyen'e dönüştür (center noktası 0,0 kabul edilir)
+        const p1x = (lon1 - centerLon) * METERS_PER_DEGREE_LON;
+        const p1y = (lat1 - centerLat) * METERS_PER_DEGREE_LAT;
+        const p2x = (lon2 - centerLon) * METERS_PER_DEGREE_LON;
+        const p2y = (lat2 - centerLat) * METERS_PER_DEGREE_LAT;
+
+        const dx = p2x - p1x;
+        const dy = p2y - p1y;
+
+        const a = dx ** 2 + dy ** 2;
+        const b = 2 * (p1x * dx + p1y * dy);
+        const c = p1x ** 2 + p1y ** 2 - radiusMeters ** 2;
+
+        const discriminant = b ** 2 - 4 * a * c;
+        const result = [];
+
+        if (discriminant < 0) {
+          return [];
+        }
+
+        const sqrtD = Math.sqrt(discriminant);
+        const t1 = (-b - sqrtD) / (2 * a);
+        const t2 = (-b + sqrtD) / (2 * a);
+
+        const tValues = [];
+        if (discriminant < epsilon) {
+          tValues.push(-b / (2 * a));
+        } else {
+          tValues.push(t1, t2);
+        }
+
+        for (const t of tValues) {
+          if (t >= -epsilon && t <= 1 + epsilon) {
+            const ix = p1x + t * dx;
+            const iy = p1y + t * dy;
+
+            const dToCenter = Math.sqrt(ix ** 2 + iy ** 2);
+            if (Math.abs(dToCenter - radiusMeters) < epsilon) {
+              // Yerel Kartezyen'den Lat-Lon'a geri dönüş
+              const ilat = centerLat + iy / METERS_PER_DEGREE_LAT;
+              const ilon = centerLon + ix / METERS_PER_DEGREE_LON;
+              result.push([ilat, ilon]);
+            }
+          }
+        }
+
+        // Aynı noktaları filtrele
+        const seen = new Set();
+        const unique = [];
+
+        for (const [lat, lon] of result) {
+          const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push([lat, lon]);
+          }
+        }
+
+        return unique.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      }
+
+      function geoMidpointWeightedMultiple(latitudes, longitudes, weights) {
+        const latRads = latitudes.map(degreesToRadians);
+        const lonRads = longitudes.map(degreesToRadians);
+
+        let totalWeight = weights.reduce((a, b) => a + b, 0);
+
+        let x = 0,
+          y = 0,
+          z = 0;
+        for (let i = 0; i < latitudes.length; i++) {
+          const lat = latRads[i];
+          const lon = lonRads[i];
+          const weight = weights[i];
+
+          x += Math.cos(lat) * Math.cos(lon) * weight;
+          y += Math.cos(lat) * Math.sin(lon) * weight;
+          z += Math.sin(lat) * weight;
+        }
+
+        x /= totalWeight;
+        y /= totalWeight;
+        z /= totalWeight;
+
+        const lon = Math.atan2(y, x);
+        const hyp = Math.sqrt(x * x + y * y);
+        const lat = Math.atan2(z, hyp);
+
+        return [(lat * 180) / Math.PI, (lon * 180) / Math.PI];
+      }
+
+      function postProcessData(data) {
+        // Get midpoint of same timestamp
+        var groupedData = {};
+        Object.values(data).forEach((item) => {
+          groupedData[item.timestamp] = groupedData[item.timestamp]
+            ? [...groupedData[item.timestamp], item]
+            : [item];
+        });
+        var processedData = [];
+        for (var timestamp in groupedData) {
+          var items = groupedData[timestamp];
+
+          if (items.length === 1) {
+            processedData.push(items[0]);
+          } else if (items.length > 1) {
+            var latitudes = items.map((item) => item.location.latitude);
+            var longitudes = items.map((item) => item.location.longitude);
+            var accuracys = items.map((item) => 1 / item.location.accuracy);
+
+            var altitude =
+              items
+                .map((item) => item.location.altitude)
+                .filter((item) => item !== 0)
+                .reduce((a, b) => a + b) / items.length;
+            var accuracy = 1 / accuracys.reduce((a, b) => a + b) / items.length;
+
+            var midpoint = geoMidpointWeightedMultiple(
+              latitudes,
+              longitudes,
+              accuracys
+            );
+
+            processedData.push({
+              type: "mixed",
+              child: items.map((item) => item.type),
+              timestamp: Number(timestamp),
+              datePublished: 0,
+              location: {
+                latitude: midpoint[0],
+                longitude: midpoint[1],
+                altitude,
+                accuracy,
+              },
+            });
+          }
+        }
+
+        processedData.sort((a, b) => a.timestamp - b.timestamp);
+
+        processedData.forEach((item, index, array) => {
+          if (array[index - 1]) {
+            var prev_item = array[index - 1];
+
+            var intersect_prev_circle = circleIntersection(
+              prev_item.location.latitude,
+              prev_item.location.longitude,
+              prev_item.location.accuracy,
+              item.location.latitude,
+              item.location.longitude,
+              item.location.accuracy
+            );
+            if (intersect_prev_circle) {
+              var intersect_radius = intersectionRadius(
+                prev_item.location.latitude,
+                prev_item.location.longitude,
+                prev_item.location.accuracy,
+                item.location.latitude,
+                item.location.longitude,
+                item.location.accuracy
+              );
+
+              var intersect_midpoint = geoMidpointWeighted(
+                prev_item.location.latitude,
+                prev_item.location.longitude,
+                1 / prev_item.location.accuracy,
+                item.location.latitude,
+                item.location.longitude,
+                1 / item.location.accuracy
+              );
+
+              item = Object.assign(item, {
+                timestamp: item.timestamp,
+                oldLocation: { ...item.location },
+                location: Object.assign(item.location, {
+                  latitude: intersect_midpoint[0],
+                  longitude: intersect_midpoint[1],
+                  accuracy: intersect_radius,
+                }),
+                process: "intersect with previous",
+              });
+            } else if (array[index + 1]) {
+              var next_item = array[index + 1];
+
+              var intersect_next_circle = circleIntersection(
+                item.location.latitude,
+                item.location.longitude,
+                item.location.accuracy,
+                next_item.location.latitude,
+                next_item.location.longitude,
+                next_item.location.accuracy
+              );
+              if (intersect_next_circle) {
+                var intersect_midpoint = geoMidpointWeighted(
+                  item.location.latitude,
+                  item.location.longitude,
+                  1 / item.location.accuracy,
+                  next_item.location.latitude,
+                  next_item.location.longitude,
+                  1 / next_item.location.accuracy
+                );
+                var intersect_radius = intersectionRadius(
+                  item.location.latitude,
+                  item.location.longitude,
+                  item.location.accuracy,
+                  next_item.location.latitude,
+                  next_item.location.longitude,
+                  next_item.location.accuracy
+                );
+
+                var line_intersects = lineCircleSegmentIntersection(
+                  prev_item.location.latitude,
+                  prev_item.location.longitude,
+                  intersect_midpoint[0],
+                  intersect_midpoint[1],
+                  item.location.latitude,
+                  item.location.longitude,
+                  item.location.accuracy
+                );
+
+                if (line_intersects.length === 0) {
+                  line_midpoint = geoMidpoint(
+                    prev_item.location.latitude,
+                    prev_item.location.longitude,
+                    intersect_midpoint[0],
+                    intersect_midpoint[1]
+                  );
+
+                  line_midpoint_strut_intersects =
+                    lineCircleSegmentIntersection(
+                      line_midpoint[0],
+                      line_midpoint[1],
+                      item.location.latitude,
+                      item.location.longitude,
+                      item.location.latitude,
+                      item.location.longitude,
+                      item.location.accuracy
+                    );
+
+                  if (line_midpoint_strut_intersects.length === 0) {
+                    line_midpoint_radius = Math.abs(
+                      haversine(
+                        prev_item.location.latitude,
+                        prev_item.location.longitude,
+                        intersect_midpoint[0],
+                        intersect_midpoint[1]
+                      ) -
+                        prev_item.location.accuracy -
+                        intersect_radius / 2
+                    );
+
+                    item = Object.assign(item, {
+                      timestamp: item.timestamp,
+                      oldLocation: { ...item.location },
+                      location: Object.assign(item.location, {
+                        latitude: line_midpoint[0],
+                        longitude: line_midpoint[1],
+                        accuracy: line_midpoint_radius,
+                      }),
+
+                      process:
+                        "item circle includes prev and next strut not intersects",
+                    });
+                  } else if (line_midpoint_strut_intersects.length === 1) {
+                    item = Object.assign(item, {
+                      timestamp: item.timestamp,
+                      oldLocation: { ...item.location },
+                      location: Object.assign(item.location, {
+                        latitude: line_midpoint_strut_intersects[0][0],
+                        longitude: line_midpoint_strut_intersects[0][1],
+                        accuracy: haversine(
+                          line_midpoint_strut_intersects[0][0],
+                          line_midpoint_strut_intersects[0][1],
+                          item.location.latitude,
+                          item.location.longitude
+                        ),
+                      }),
+
+                      process: "item intersact with next and strut intersects",
+                    });
+                  } else {
+                    console.log(
+                      "line_midpoint_strut_intersects.length",
+                      line_midpoint_strut_intersects.length
+                    );
+                  }
+                } else {
+                  latitudes = line_intersects.map((item) => {
+                    return item[0];
+                  });
+                  longitudes = line_intersects.map((item) => {
+                    return item[1];
+                  });
+
+                  line_intersect_midpoint = geoMidpointMultiple(
+                    latitudes,
+                    longitudes
+                  );
+                  line_intersect_radius =
+                    line_intersects.length === 1
+                      ? item.location.accuracy
+                      : haversine(
+                          latitudes[0],
+                          longitudes[0],
+                          latitudes[1],
+                          longitudes[1]
+                        ) / 2;
+
+                  item = Object.assign(item, {
+                    timestamp: item.timestamp,
+                    oldLocation: { ...item.location },
+                    location: Object.assign(item.location, {
+                      latitude: line_intersect_midpoint[0],
+                      longitude: line_intersect_midpoint[1],
+                      accuracy: line_intersect_radius,
+                    }),
+
+                    process:
+                      "item circle intersects with line " +
+                      line_intersects.length +
+                      " times",
+                  });
+                }
+              } else {
+                var line_intersects = lineCircleSegmentIntersection(
+                  prev_item.location.latitude,
+                  prev_item.location.longitude,
+                  next_item.location.latitude,
+                  next_item.location.longitude,
+                  item.location.latitude,
+                  item.location.longitude,
+                  item.location.accuracy
+                );
+
+                if (line_intersects.length === 0) {
+                  line_midpoint = geoMidpoint(
+                    prev_item.location.latitude,
+                    prev_item.location.longitude,
+                    next_item.location.latitude,
+                    next_item.location.longitude
+                  );
+
+                  line_midpoint_strut_intersects =
+                    lineCircleSegmentIntersection(
+                      line_midpoint[0],
+                      line_midpoint[1],
+                      item.location.latitude,
+                      item.location.longitude,
+                      item.location.latitude,
+                      item.location.longitude,
+                      item.location.accuracy
+                    );
+
+                  if (line_midpoint_strut_intersects.length === 0) {
+                    line_midpoint_radius = Math.abs(
+                      haversine(
+                        prev_item.location.latitude,
+                        prev_item.location.longitude,
+                        next_item.location.latitude,
+                        next_item.location.longitude
+                      ) -
+                        prev_item.location.accuracy -
+                        next_item.location.accuracy / 2
+                    );
+
+                    item = Object.assign(item, {
+                      timestamp: item.timestamp,
+                      oldLocation: { ...item.location },
+                      location: Object.assign(item.location, {
+                        latitude: line_midpoint[0],
+                        longitude: line_midpoint[1],
+                        accuracy: line_midpoint_radius,
+                      }),
+
+                      process: "item circle includes prev and next",
+                    });
+                  } else if (line_midpoint_strut_intersects.length === 1) {
+                    item = Object.assign(item, {
+                      timestamp: item.timestamp,
+                      oldLocation: { ...item.location },
+                      location: Object.assign(item.location, {
+                        latitude: line_midpoint_strut_intersects[0][0],
+                        longitude: line_midpoint_strut_intersects[0][1],
+                        accuracy: item.location.accuracy,
+                      }),
+
+                      process: "item circle intersact with strut ",
+                    });
+                  } else {
+                    console.log(
+                      "line_midpoint_strut_intersects.length",
+                      line_midpoint_strut_intersects.length
+                    );
+                  }
+                } else {
+                  latitudes = line_intersects.map((item) => {
+                    return item[0];
+                  });
+                  longitudes = line_intersects.map((item) => {
+                    return item[1];
+                  });
+
+                  line_intersect_midpoint = geoMidpointMultiple(
+                    latitudes,
+                    longitudes
+                  );
+                  line_intersect_radius =
+                    line_intersects.length === 1
+                      ? item.location.accuracy
+                      : haversine(
+                          latitudes[0],
+                          longitudes[0],
+                          latitudes[1],
+                          longitudes[1]
+                        ) / 2;
+
+                  item = Object.assign(item, {
+                    timestamp: item.timestamp,
+                    oldLocation: { ...item.location },
+                    location: Object.assign(item.location, {
+                      latitude: line_intersect_midpoint[0],
+                      longitude: line_intersect_midpoint[1],
+                      accuracy: line_intersect_radius,
+                    }),
+
+                    process:
+                      "item circle intersects with line " +
+                      line_intersects.length +
+                      " times",
+                  });
+                }
+              }
+            } else {
+              item = Object.assign(item, {
+                timestamp: item.timestamp,
+                process: "last",
+              });
+            }
+          } else {
+            item["process"] = "first";
+          }
+        });
+
+        return processedData;
+      }
+    </script>
+    <script>
+      // Haritayı başlat
+      const map = L.map("map");
+      const currentMarkers = {
+        google: null,
+        apple: null,
+        mixed: null, // Add mixed type
+      };
+      const previousMarkers = {
+        google: null,
+        apple: null,
+        mixed: null, // Add mixed type
+      };
+      const interpolationBoundaryMarkers = {
+        google: { prev: null, next: null },
+        apple: { prev: null, next: null },
+        mixed: { prev: null, next: null }, // Add mixed type
+        debug: { prev: null, next: null },
+      };
+      const debugLines = {
+        prev: null,
+        next: null,
+      };
+      const debugCircles = {
+        prev: null,
+        next: null,
+        prevProcessed: null,
+        nextProcessed: null,
+      };
+
+      let allDeviceLocations = {}; // This will hold ALL fetched data for the selected device, regardless of time range
+      let currentDeviceLocations = {}; // This will hold the filtered data based on time range and checkboxes
+      let minTimestamp = Infinity;
+      let maxTimestamp = -Infinity;
+      let selectedDeviceHash = ""; // Store the currently selected device hash
+
+      // Store the current filter settings
+      var activeFilters = {
+        google: true,
+        apple: true,
+        mixed: true, // Default to all visible
+      };
+
+      // OpenStreetMap katmanını ekle
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıda bulunanlar',
+      }).addTo(map);
+
+      // HTML elementlerine referansları al
+      const deviceSelect = document.getElementById("deviceSelect");
+      const timeRangeSelect = document.getElementById("timeRangeSelect"); // New time range select
+      const timeSlider = document.getElementById("timeSlider");
+      const currentDateDisplay = document.getElementById("currentDateDisplay");
+      const loadingStatus = document.getElementById("loadingStatus");
+      const refreshButton = document.getElementById("refreshButton"); // New refresh button
+
+      // Checkbox elements
+      const showGoogleCheckbox = document.getElementById("showGoogle");
+      const showAppleCheckbox = document.getElementById("showApple");
+      const showMixedCheckbox = document.getElementById("showMixed");
+
+      activeFilters = {
+        google: showGoogleCheckbox.checked,
+        apple: showAppleCheckbox.checked,
+        mixed: showMixedCheckbox.checked,
+      };
+
+      // Define custom icons
+      function createCurrentLocationIcon(color, size = 20) {
+        return L.divIcon({
+          className: "custom-div-icon current-location-marker",
+          html: `<div style="background-color:${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        });
+      }
+
+      function createPreviousLocationIcon(color) {
+        return L.divIcon({
+          className: "custom-div-icon previous-location-marker",
+          html: `<div style="background-color:${color}; width: 12px; height: 12px; border-radius: 50%; border: 1px solid white; opacity: 0.7;"></div>`,
+          iconSize: [12, 12],
+          iconAnchor: [6, 6],
+        });
+      }
+
+      function createInterpolationBoundaryIcon(color, isStart = true) {
+        const opacity = 0.5;
+        const borderSize = 2;
+        const size = 15;
+        const text = isStart ? "S" : "E";
+        return L.divIcon({
+          className: `custom-div-icon interpolation-boundary-marker ${
+            isStart ? "start-point" : "end-point"
+          }`,
+          html: `<div style="background-color:${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: ${borderSize}px solid white; opacity: ${opacity}; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 10px;">${text}</div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        });
+      }
+
+      /**
+       * Belirtilen zaman damgası için iki konum arasında lineer interpolasyon yapar.
+       * @param {Object} prevLoc - Önceki konum nesnesi.
+       * @param {Object} nextLoc - Sonraki konum nesnesi.
+       * @param {number} timestamp - İnterpolasyon yapılacak zaman damgası.
+       * @returns {Array} - [latitude, longitude] olarak interpolasyon yapılmış koordinatlar.
+       */
+      function interpolateLocation(prevLoc, nextLoc, timestamp) {
+        const timeDiff = nextLoc.timestamp - prevLoc.timestamp;
+        if (timeDiff === 0)
+          return [prevLoc.location.latitude, prevLoc.location.longitude];
+
+        const ratio = (timestamp - prevLoc.timestamp) / timeDiff;
+
+        const interpolatedLat =
+          prevLoc.location.latitude +
+          (nextLoc.location.latitude - prevLoc.location.latitude) * ratio;
+        const interpolatedLon =
+          prevLoc.location.longitude +
+          (nextLoc.location.longitude - prevLoc.location.longitude) * ratio;
+
+        return [interpolatedLat, interpolatedLon];
+      }
+
+      /**
+       * Haritayı seçilen zaman damgasına kadar olan en son konumlarla günceller.
+       * Ayrıca önceki konumları ve aralarındaki sembolleri gösterir.
+       * @param {number} selectedTimestamp - Kaydırıcı tarafından seçilen zaman damgası.
+       */
+      function updateMapForTimestamp(selectedTimestamp) {
+        const allLatLngsForBounds = [];
+
+        // Helper function to find bounding locations for interpolation
+        function findBoundingLocations(type, targetTimestamp) {
+          if (!currentDeviceLocations || currentDeviceLocations.length === 0) {
+            return { prevLoc: null, nextLoc: null };
+          }
+
+          // Filter based on checkbox selection and type
+          var filteredLocations = [];
+          if (type === "google")
+            filteredLocations = currentDeviceLocations["google"];
+          else if (type === "apple")
+            filteredLocations = currentDeviceLocations["apple"];
+          else filteredLocations = currentDeviceLocations["mixed"];
+
+          const typeLocations = filteredLocations.filter(
+            (loc) => loc.location.latitude && loc.location.longitude
+          );
+          typeLocations.sort((a, b) => a.timestamp - b.timestamp); // Sort by timestamp ascending
+
+          let prevLoc = null;
+          let nextLoc = null;
+
+          for (let i = 0; i < typeLocations.length; i++) {
+            if (typeLocations[i].timestamp <= targetTimestamp) {
+              prevLoc = typeLocations[i];
+            }
+            if (typeLocations[i].timestamp > targetTimestamp) {
+              nextLoc = typeLocations[i];
+              break;
+            }
+          }
+          return { prevLoc, nextLoc };
+        }
+
+        // Clear all markers before redrawing
+        clearAllMarkers();
+
+        // Handle Location Updates for each type
+        ["google", "apple", "mixed"].forEach((type) => {
+          if (!activeFilters[type]) {
+            // If the filter is off, skip this type
+            return;
+          }
+
+          const color =
+            type === "google" ? "yellow" : type === "apple" ? "black" : "red"; // Red for mixed/filtered data
+
+          const { prevLoc, nextLoc } = findBoundingLocations(
+            type,
+            selectedTimestamp
+          );
+          const currentMarkerKey = type;
+          const previousMarkerKey = type;
+          const boundaryMarkersKey = type;
+
+          if (prevLoc) {
+            let currentLatLng;
+            let popupContent;
+
+            // Determine if interpolation is happening
+            if (
+              nextLoc &&
+              selectedTimestamp > prevLoc.timestamp &&
+              selectedTimestamp < nextLoc.timestamp
+            ) {
+              // Interpolated position
+              currentLatLng = interpolateLocation(
+                prevLoc,
+                nextLoc,
+                selectedTimestamp
+              );
+              popupContent = `<b>Tip:</b> Ara Konum <br><b>Zaman:</b> ${new Date(
+                selectedTimestamp * 1000
+              ).toLocaleString()}`;
+
+              // Add boundary markers for interpolation
+              const prevBoundaryLatLng = [
+                prevLoc.location.latitude,
+                prevLoc.location.longitude,
+              ];
+              const nextBoundaryLatLng = [
+                nextLoc.location.latitude,
+                nextLoc.location.longitude,
+              ];
+
+              const prevBoundaryPopupContent = `<b>Tip:</b> ${
+                prevLoc.type
+              } (Başlangıç Noktası)<br><b>Zaman:</b> ${new Date(
+                prevLoc.timestamp * 1000
+              ).toLocaleString()}<br><b>Doğruluk:</b> ${
+                prevLoc.location.accuracy
+                  ? prevLoc.location.accuracy.toFixed(2) + "m"
+                  : "N/A"
+              }<br><b>Yükseklik:</b> ${
+                prevLoc.location.altitude
+                  ? prevLoc.location.altitude.toFixed(2) + "m"
+                  : "N/A"
+              }${
+                prevLoc.child
+                  ? "<br><b>Kaynak:</b> " + prevLoc.child.join(", ")
+                  : ""
+              }`;
+              const nextBoundaryPopupContent = `<b>Tip:</b> ${
+                nextLoc.type
+              } (Bitiş Noktası)<br><b>Zaman:</b> ${new Date(
+                nextLoc.timestamp * 1000
+              ).toLocaleString()}<br><b>Doğruluk:</b> ${
+                nextLoc.location.accuracy
+                  ? nextLoc.location.accuracy.toFixed(2) + "m"
+                  : "N/A"
+              }<br><b>Yükseklik:</b> ${
+                nextLoc.location.altitude
+                  ? nextLoc.location.altitude.toFixed(2) + "m"
+                  : "N/A"
+              }${
+                nextLoc.child
+                  ? "<br><b>Kaynak:</b> " + nextLoc.child.join(", ")
+                  : ""
+              }`;
+
+              interpolationBoundaryMarkers[boundaryMarkersKey].prev = L.marker(
+                prevBoundaryLatLng,
+                {
+                  icon: createInterpolationBoundaryIcon(color, true),
+                }
+              ).addTo(map);
+              interpolationBoundaryMarkers[boundaryMarkersKey].prev.bindPopup(
+                prevBoundaryPopupContent
+              );
+              allLatLngsForBounds.push(prevBoundaryLatLng);
+
+              interpolationBoundaryMarkers[boundaryMarkersKey].next = L.marker(
+                nextBoundaryLatLng,
+                {
+                  icon: createInterpolationBoundaryIcon(color, false),
+                }
+              ).addTo(map);
+              interpolationBoundaryMarkers[boundaryMarkersKey].next.bindPopup(
+                nextBoundaryPopupContent
+              );
+              allLatLngsForBounds.push(nextBoundaryLatLng);
+
+              if (type == "mixed" && prevLoc.oldLocation && POST_PROCESS_DEBUG) {
+                interpolationBoundaryMarkers["debug"].prev = L.marker(
+                  [prevLoc.oldLocation.latitude, prevLoc.oldLocation.longitude],
+                  {
+                    icon: createCurrentLocationIcon(
+                      "rgba(0, 255, 255, 0.4)",
+                      10
+                    ),
+                  }
+                ).addTo(map);
+                interpolationBoundaryMarkers["debug"].prev.bindPopup(
+                  `<b>Debug:</b> ${JSON.stringify(
+                    prevLoc.oldLocation,
+                    null,
+                    2
+                  )}`
+                );
+
+                debugLines.prev = L.polyline(
+                  [
+                    [prevLoc.location.latitude, prevLoc.location.longitude],
+                    [
+                      prevLoc.oldLocation.latitude,
+                      prevLoc.oldLocation.longitude,
+                    ],
+                  ],
+                  { color: "yellow" }
+                ).addTo(map);
+                debugCircles.prev = L.circle(
+                  [prevLoc.oldLocation.latitude, prevLoc.oldLocation.longitude],
+                  {
+                    color: "yellow",
+                    fillColor: "yellow",
+                    fillOpacity: 0.1,
+                    radius: prevLoc.oldLocation.accuracy,
+                  }
+                ).addTo(map);
+                debugCircles.prevProcessed = L.circle(
+                  [prevLoc.location.latitude, prevLoc.location.longitude],
+                  {
+                    color: "purple",
+                    fillColor: "purple",
+                    fillOpacity: 0.1,
+                    radius: prevLoc.location.accuracy,
+                  }
+                ).addTo(map);
+                allLatLngsForBounds.push([
+                  prevLoc.oldLocation.latitude,
+                  prevLoc.oldLocation.longitude,
+                ]);
+              }
+              if (type == "mixed" && nextLoc.oldLocation && POST_PROCESS_DEBUG) {
+                interpolationBoundaryMarkers["debug"].next = L.marker(
+                  [nextLoc.oldLocation.latitude, nextLoc.oldLocation.longitude],
+                  {
+                    icon: createCurrentLocationIcon(
+                      "rgba(0, 255, 255, 0.4)",
+                      10
+                    ),
+                  }
+                ).addTo(map);
+                interpolationBoundaryMarkers["debug"].next.bindPopup(
+                  `<b>Debug:</b> ${JSON.stringify(
+                    nextLoc.oldLocation,
+                    null,
+                    2
+                  )}`
+                );
+
+                debugLines.next = L.polyline(
+                  [
+                    [nextLoc.location.latitude, nextLoc.location.longitude],
+                    [
+                      nextLoc.oldLocation.latitude,
+                      nextLoc.oldLocation.longitude,
+                    ],
+                  ],
+                  { color: "yellow" }
+                ).addTo(map);
+                debugCircles.next = L.circle(
+                  [nextLoc.oldLocation.latitude, nextLoc.oldLocation.longitude],
+                  {
+                    color: "yellow",
+                    fillColor: "yellow",
+                    fillOpacity: 0.1,
+                    radius: nextLoc.oldLocation.accuracy,
+                  }
+                ).addTo(map);
+                debugCircles.nextProcessed = L.circle(
+                  [nextLoc.location.latitude, nextLoc.location.longitude],
+                  {
+                    color: "purple",
+                    fillColor: "purple",
+                    fillOpacity: 0.1,
+                    radius: nextLoc.location.accuracy,
+                  }
+                ).addTo(map);
+                allLatLngsForBounds.push([
+                  nextLoc.oldLocation.latitude,
+                  nextLoc.oldLocation.longitude,
+                ]);
+              }
+            } else {
+              // Not interpolating, use the exact latest point
+              currentLatLng = [
+                prevLoc.location.latitude,
+                prevLoc.location.longitude,
+              ];
+              popupContent = `<b>Tip:</b> ${
+                prevLoc.type
+              }<br><b>Zaman:</b> ${new Date(
+                prevLoc.timestamp * 1000
+              ).toLocaleString()}<br><b>Doğruluk:</b> ${
+                prevLoc.location.accuracy
+                  ? prevLoc.location.accuracy.toFixed(2) + "m"
+                  : "N/A"
+              }<br><b>Yükseklik:</b> ${
+                prevLoc.location.altitude
+                  ? prevLoc.location.altitude.toFixed(2) + "m"
+                  : "N/A"
+              }${
+                prevLoc.child
+                  ? "<br><b>Kaynak:</b> " + prevLoc.child.join(", ")
+                  : ""
+              }`;
+
+              // Show the actual previous point only if it's different and not part of an interpolation segment
+              const earlierLoc = currentDeviceLocations[type]
+                .filter(
+                  (loc) =>
+                    loc.timestamp < prevLoc.timestamp &&
+                    loc.location.latitude &&
+                    loc.location.longitude
+                )
+                .sort((a, b) => b.timestamp - a.timestamp)[0];
+              if (earlierLoc) {
+                const prevLatLng = [
+                  earlierLoc.location.latitude,
+                  earlierLoc.location.longitude,
+                ];
+                const prevPopupContent = `<b>Tip:</b> ${
+                  earlierLoc.type
+                } (Önceki Konum)<br><b>Zaman:</b> ${new Date(
+                  earlierLoc.timestamp * 1000
+                ).toLocaleString()}<br><b>Doğruluk:</b> ${
+                  earlierLoc.location.accuracy
+                    ? earlierLoc.location.accuracy.toFixed(2) + "m"
+                    : "N/A"
+                }<br><b>Yükseklik:</b> ${
+                  earlierLoc.location.altitude
+                    ? earlierLoc.location.altitude.toFixed(2) + "m"
+                    : "N/A"
+                }${
+                  earlierLoc.child
+                    ? "<br><b>Kaynak:</b> " + earlierLoc.child.join(", ")
+                    : ""
+                }`;
+                previousMarkers[previousMarkerKey] = L.marker(prevLatLng, {
+                  icon: createPreviousLocationIcon(
+                    `rgba(${
+                      type === "google"
+                        ? "255, 255, 0"
+                        : type === "apple"
+                        ? "0, 0, 0"
+                        : "255, 0, 0"
+                    }, 0.4)`
+                  ),
+                }).addTo(map);
+                previousMarkers[previousMarkerKey].bindPopup(prevPopupContent);
+                allLatLngsForBounds.push(prevLatLng);
+              }
+            }
+
+            // Update or create the current marker
+            currentMarkers[currentMarkerKey] = L.marker(currentLatLng, {
+              icon: createCurrentLocationIcon(color),
+              zIndexOffset: 1000,
+            }).addTo(map);
+            currentMarkers[currentMarkerKey].bindPopup(popupContent);
+            allLatLngsForBounds.push(currentLatLng);
+          }
+        });
+
+        // Update the displayed date
+        currentDateDisplay.textContent = new Date(
+          selectedTimestamp * 1000
+        ).toLocaleString();
+
+        // Fit map bounds to all visible markers (current, previous, and boundary points)
+        if (allLatLngsForBounds.length > 0) {
+          map.fitBounds(L.latLngBounds(allLatLngsForBounds), {
+            padding: [50, 50],
+          });
+        } else {
+          // If no locations to display, set a default view (e.g., Mersin)
+          map.setView([36.7782803, 34.6346764], 12);
+        }
+      }
+
+      /**
+       * Clears all markers from the map.
+       */
+      function clearAllMarkers() {
+        Object.values(currentMarkers).forEach((marker) => {
+          if (marker) map.removeLayer(marker);
+        });
+        Object.values(previousMarkers).forEach((marker) => {
+          if (marker) map.removeLayer(marker);
+        });
+        Object.values(interpolationBoundaryMarkers).forEach((typeMarkers) => {
+          if (typeMarkers.prev) map.removeLayer(typeMarkers.prev);
+          if (typeMarkers.next) map.removeLayer(typeMarkers.next);
+        });
+        Object.values(debugLines).forEach((line) => {
+          if (line) map.removeLayer(line);
+        });
+        Object.values(debugCircles).forEach((circle) => {
+          if (circle) map.removeLayer(circle);
+        });
+        currentMarkers.google =
+          currentMarkers.apple =
+          currentMarkers.mixed =
+            null;
+        previousMarkers.google =
+          previousMarkers.apple =
+          previousMarkers.mixed =
+            null;
+        interpolationBoundaryMarkers.google.prev =
+          interpolationBoundaryMarkers.google.next = null;
+        interpolationBoundaryMarkers.apple.prev =
+          interpolationBoundaryMarkers.apple.next = null;
+        interpolationBoundaryMarkers.mixed.prev =
+          interpolationBoundaryMarkers.mixed.next = null;
+
+        debugLines.prev = debugLines.next = null;
+        debugCircles.prev = debugCircles.next = null;
+      }
+
+      /**
+       * Fetches all device hashes and populates the dropdown.
+       */
+      async function fetchDevices() {
+        loadingStatus.textContent = "Cihazlar yükleniyor...";
+        deviceSelect.innerHTML =
+          '<option value="">Cihazlar Yükleniyor...</option>';
+        deviceSelect.disabled = true;
+        timeSlider.disabled = true;
+        refreshButton.disabled = true; // Disable refresh button during device fetch
+        timeRangeSelect.disabled = true; // Disable time range during device fetch
+
+        try {
+          const response = await fetch(`/devices`);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const devices = await response.json(); // devices should be an array of strings (hashes)
+
+          deviceSelect.innerHTML = '<option value="">Cihaz Seçin</option>'; // Default option
+
+          Object.keys(devices).forEach((deviceHash) => {
+            const device = devices[deviceHash];
+            const option = document.createElement("option");
+            option.value = deviceHash;
+            option.textContent = device["name"];
+            deviceSelect.appendChild(option);
+          });
+          deviceSelect.disabled = false;
+          timeRangeSelect.disabled = false; // Enable time range after devices are loaded
+          loadingStatus.textContent = "";
+        } catch (error) {
+          loadingStatus.textContent = `Cihazlar yüklenirken hata oluştu: ${error.message}`;
+          console.error("Error fetching devices:", error);
+          deviceSelect.innerHTML =
+            '<option value="">Cihazlar Yüklenemedi</option>';
+        }
+      }
+
+      /**
+       * Fetches location data for a selected device hash and updates the map.
+       * @param {string} deviceHash - The hash of the selected device.
+       */
+      async function fetchDeviceLocationData(deviceHash) {
+        clearAllMarkers(); // Clear map when a new device is selected
+        allDeviceLocations = {}; // Reset all data
+        currentDeviceLocations = {}; // Reset current filtered data
+        minTimestamp = Infinity;
+        maxTimestamp = -Infinity;
+        timeSlider.disabled = true;
+        refreshButton.disabled = true; // Disable refresh until data is loaded
+        timeSlider.value = 0; // Reset slider
+        currentDateDisplay.textContent = "";
+        loadingStatus.textContent = `Cihaz verileri yükleniyor (${deviceHash})...`;
+        selectedDeviceHash = deviceHash; // Store the selected hash
+
+        if (!deviceHash) {
+          loadingStatus.textContent = "Lütfen bir cihaz seçin.";
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          return;
+        }
+
+        try {
+          const response = await fetch(`/device/${deviceHash}`);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+
+          const rawData = Object.values(data);
+          const google = rawData.filter((d) => d.type === "google");
+          const apple = rawData.filter((d) => d.type === "apple");
+          const mixed = postProcessData(data);
+
+          allDeviceLocations = {
+            google,
+            apple,
+            mixed,
+          };
+
+          applyTimeRangeFilter(); // Apply the selected time range filter
+          loadingStatus.textContent = ""; // Clear loading message
+        } catch (error) {
+          loadingStatus.textContent = `Cihaz verileri yüklenirken hata oluştu: ${error.message}`;
+          console.error(`Error fetching data for device ${deviceHash}:`, error);
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+        }
+      }
+
+      /**
+       * Applies the selected time range filter to the fetched data.
+       */
+      function applyTimeRangeFilter() {
+        const timeRange = parseInt(timeRangeSelect.value); // Value is in seconds
+        const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+
+        minTimestamp = Infinity;
+        maxTimestamp = -Infinity;
+        currentDeviceLocations = {
+          google: [],
+          apple: [],
+          mixed: [],
+        };
+
+        if (timeRangeSelect.value === "all") {
+          currentDeviceLocations = { ...allDeviceLocations };
+        } else {
+          for (const type in allDeviceLocations) {
+            currentDeviceLocations[type] = allDeviceLocations[type].filter(
+              (loc) => loc.timestamp >= currentTime - timeRange
+            );
+          }
+        }
+
+        // Find min/max timestamps for the *filtered* data
+        const allFilteredData = [
+          ...currentDeviceLocations.google,
+          ...currentDeviceLocations.apple,
+          ...currentDeviceLocations.mixed,
+        ];
+
+        if (allFilteredData.length > 0) {
+          allFilteredData.forEach((loc) => {
+            if (loc.timestamp < minTimestamp) minTimestamp = loc.timestamp;
+            if (loc.timestamp > maxTimestamp) maxTimestamp = loc.timestamp;
+          });
+
+          timeSlider.min = minTimestamp;
+          timeSlider.max = maxTimestamp;
+          timeSlider.value = maxTimestamp; // Set to latest for initial view
+          timeSlider.disabled = false;
+          refreshButton.disabled = false; // Enable refresh button once data is loaded
+          updateMapForTimestamp(maxTimestamp); // Initial map update with latest data
+        } else {
+          loadingStatus.textContent =
+            "Seçilen zaman aralığında konum verisi bulunamadı.";
+          timeSlider.disabled = true;
+          refreshButton.disabled = true;
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          clearAllMarkers();
+        }
+      }
+
+      // Event Listeners
+      deviceSelect.addEventListener("change", (event) => {
+        selectedDeviceHash = event.target.value; // Update the global selectedDeviceHash
+        fetchDeviceLocationData(selectedDeviceHash);
+      });
+
+      timeRangeSelect.addEventListener("change", () => {
+        if (selectedDeviceHash) {
+          applyTimeRangeFilter(); // Apply the filter based on current data
+        }
+      });
+
+      timeSlider.addEventListener("input", (event) => {
+        updateMapForTimestamp(parseInt(event.target.value));
+      });
+
+      // Event listeners for the new filter checkboxes
+      showGoogleCheckbox.addEventListener("change", (event) => {
+        activeFilters.google = event.target.checked;
+        updateMapForTimestamp(parseInt(timeSlider.value));
+      });
+
+      showAppleCheckbox.addEventListener("change", (event) => {
+        activeFilters.apple = event.target.checked;
+        updateMapForTimestamp(parseInt(timeSlider.value));
+      });
+
+      showMixedCheckbox.addEventListener("change", (event) => {
+        activeFilters.mixed = event.target.checked;
+        updateMapForTimestamp(parseInt(timeSlider.value));
+      });
+
+      // Event listener for the new refresh button
+      refreshButton.addEventListener("click", () => {
+        if (selectedDeviceHash) {
+          fetchDeviceLocationData(selectedDeviceHash); // Re-fetch data for the currently selected device
+        } else {
+          fetchDevices(); // If no device is selected, re-fetch the list of devices
+        }
+      });
+
+      // NEW: Keyboard arrow key navigation for the slider
+      document.addEventListener("keydown", (event) => {
+        if (timeSlider.disabled) return; // Do nothing if slider is disabled
+
+        let newSliderValue = parseInt(timeSlider.value);
+        const step = TIMESLIDER_STEP || 10;
+
+        if (event.key === "ArrowRight" || event.key === "Right") {
+          newSliderValue = Math.min(
+            newSliderValue + step,
+            parseInt(timeSlider.max)
+          );
+          timeSlider.value = newSliderValue;
+          updateMapForTimestamp(newSliderValue);
+          event.preventDefault(); // Prevent default browser scroll behavior
+        } else if (event.key === "ArrowLeft" || event.key === "Left") {
+          newSliderValue = Math.max(
+            newSliderValue - step,
+            parseInt(timeSlider.min)
+          );
+          timeSlider.value = newSliderValue;
+          updateMapForTimestamp(newSliderValue);
+          event.preventDefault(); // Prevent default browser scroll behavior
+        }
+      });
+
+      // Initial fetch of devices when the page loads
+      document.addEventListener("DOMContentLoaded", () => {
+        fetchDevices();
+        // Set initial map view to Mersin before any data is loaded
+        map.setView([36.7782803, 34.6346764], 12);
+      });
+    </script>
+  </body>
+</html>

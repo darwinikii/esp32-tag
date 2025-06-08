@@ -1,0 +1,8 @@
+/firmware/apple/
+/firmware/google/
+
+/server/.venv
+/server/devices/*.json
+/server/devices/locationCache/*/*.json
+/server/apple/Auth/apple_secrets.json
+/server/google/Auth/google_secrets.json
