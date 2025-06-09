@@ -6,3 +6,5 @@
 /server/devices/locationCache/*/*.json
 /server/apple/Auth/apple_secrets.json
 /server/google/Auth/google_secrets.json
+
+**/__pycache__/

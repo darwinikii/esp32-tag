@@ -145,6 +145,32 @@
         gap: 5px;
       }
 
+      .custom-date-container {
+        display: none; /* Varsayılan olarak gizli */
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        margin-top: 10px;
+        padding-top: 15px;
+        border-top: 1px solid #eeeeee;
+      }
+      .date-inputs {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap; /* Küçük ekranlar için */
+        justify-content: center;
+      }
+      .date-inputs label {
+        font-size: 0.9em;
+      }
+      .date-inputs input[type="date"] {
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        font-size: 0.95em;
+      }
       /* Responsive adjustments */
       @media (max-width: 768px) {
         #map,
@@ -154,6 +180,9 @@
         .filter-options {
           flex-direction: column;
           align-items: flex-start;
+        }
+        .date-inputs {
+          flex-direction: column;
         }
       }
     </style>
@@ -176,11 +205,23 @@
         <option value="43200">Son 12 Saat</option>
         <option value="86400">Son 1 Gün</option>
         <option value="172800">Son 2 Gün</option>
-        <option value="345600">Son 4 Gün</option>
         <option value="604800">Son 1 Hafta</option>
-        <option value="1209600">Son 2 Hafta</option>
         <option value="2592000">Son 1 Ay</option>
+        <option value="custom">Özel Aralık</option>
       </select>
+
+      <div id="customDateContainer" class="custom-date-container">
+        <div class="date-inputs">
+          <div>
+            <label for="startDate">Başlangıç:</label>
+            <input type="date" id="startDate" />
+          </div>
+          <div>
+            <label for="endDate">Bitiş:</label>
+            <input type="date" id="endDate" />
+          </div>
+        </div>
+      </div>
 
       <label for="timeSlider">Seçilen Tarih:</label>
       <div class="slider-group">
@@ -452,6 +493,21 @@
         return R * c;
       }
 
+      function haversineMultiple(latitudes, longitudes) {
+        const n = latitudes.length;
+        let totalDistance = 0;
+
+        for (let i = 0; i < n - 1; i++) {
+          totalDistance += haversine(
+            latitudes[i],
+            longitudes[i],
+            latitudes[i + 1],
+            longitudes[i + 1]
+          );
+        }
+        return totalDistance;
+      }
+
       function circleIntersection(lat1, lon1, r1, lat2, lon2, r2) {
         const d = haversine(lat1, lon1, lat2, lon2);
         return Math.abs(r1 - r2) < d && d < r1 + r2;
@@ -668,10 +724,17 @@
         // Get midpoint of same timestamp
         var groupedData = {};
         Object.values(data).forEach((item) => {
-          groupedData[item.timestamp] = groupedData[item.timestamp]
-            ? [...groupedData[item.timestamp], item]
-            : [item];
+          var isFound = false;
+          for (var i = item.timestamp - 2; i <= item.timestamp + 2; i++) {
+            if (groupedData[i]) {
+              groupedData[i] = [...groupedData[i], item];
+              isFound = true;
+            }
+          }
+
+          if (isFound === false) groupedData[item.timestamp] = [item];
         });
+
         var processedData = [];
         for (var timestamp in groupedData) {
           var items = groupedData[timestamp];
@@ -712,6 +775,111 @@
         }
 
         processedData.sort((a, b) => a.timestamp - b.timestamp);
+
+        var problematic_ranges = [];
+        var temp_range = [];
+        processedData.forEach((item, index, array) => {
+          if (array[index - 1]) {
+            var prev_item = array[index - 1];
+
+            var distance = haversine(
+              prev_item.location.latitude,
+              prev_item.location.longitude,
+              item.location.latitude,
+              item.location.longitude
+            );
+            var time_diff = item.timestamp - prev_item.timestamp;
+            var speed = (distance / time_diff) * 3.6; // kilometers per hour
+
+            if (speed > 100) {
+              if (
+                temp_range.includes(index - 1) ||
+                temp_range.includes(index)
+              ) {
+                if (!temp_range.includes(index - 1)) temp_range.push(index - 1);
+                if (!temp_range.includes(index)) temp_range.push(index);
+              } else if (temp_range.length > 0) {
+                problematic_ranges.push(temp_range);
+                temp_range = [index - 1, index];
+              } else {
+                temp_range = [index - 1, index];
+              }
+            }
+          }
+        });
+
+        problematic_ranges.forEach((range) => {
+          var min_index = range[0];
+          var max_index = range[range.length - 1];
+
+          if (range.length == 2) {
+            latitudes = processedData
+              .slice(min_index, max_index + 1)
+              .map((item) => item.location.latitude);
+            longitudes = processedData
+              .slice(min_index, max_index + 1)
+              .map((item) => item.location.longitude);
+            accuracys = processedData
+              .slice(min_index, max_index + 1)
+              .map((item) => 1 / item.location.accuracy);
+
+            altitudes =
+              processedData
+                .slice(min_index, max_index + 1)
+                .map((item) => item.location.altitude)
+                .filter((item) => item !== 0) / range.length;
+            arruracy = 1 / accuracys.reduce((a, b) => a + b) / range.length;
+            timestamp =
+              processedData
+                .slice(min_index, max_index + 1)
+                .map((item) => item.timestamp)
+                .reduce((a, b) => a + b) / range.length;
+
+            midpoint = geoMidpointWeightedMultiple(
+              latitudes,
+              longitudes,
+              accuracys
+            );
+
+            processedData[min_index] = false;
+            processedData[max_index] = false;
+
+            processedData[timestamp] = {
+              type: "mixed",
+              child: processedData
+                .slice(min_index, max_index + 1)
+                .map((item) => item.type),
+              timestamp,
+              datePublished: 0,
+              location: {
+                latitude: midpoint[0],
+                longitude: midpoint[1],
+                altitude,
+                accuracy,
+              },
+            };
+          } else if (range.length == 3) {
+            var min_index = range[0];
+            var mid_index = range[range.length / 2 - 0.5];
+            var max_index = range[range.length - 1];
+
+            var min_max_speed =
+              (haversine(
+                processedData[min_index].location.latitude,
+                processedData[min_index].location.longitude,
+                processedData[max_index].location.latitude,
+                processedData[max_index].location.longitude
+              ) /
+                (processedData[max_index].timestamp -
+                  processedData[min_index].timestamp)) *
+              3.6;
+            if (min_max_speed < 100) {
+              processedData[mid_index] = false;
+            }
+          }
+        });
+
+        processedData = processedData.filter((item) => item != false);
 
         processedData.forEach((item, index, array) => {
           if (array[index - 1]) {
@@ -1070,11 +1238,17 @@
 
       // HTML elementlerine referansları al
       const deviceSelect = document.getElementById("deviceSelect");
-      const timeRangeSelect = document.getElementById("timeRangeSelect"); // New time range select
+      const timeRangeSelect = document.getElementById("timeRangeSelect");
       const timeSlider = document.getElementById("timeSlider");
       const currentDateDisplay = document.getElementById("currentDateDisplay");
       const loadingStatus = document.getElementById("loadingStatus");
-      const refreshButton = document.getElementById("refreshButton"); // New refresh button
+      const refreshButton = document.getElementById("refreshButton");
+      const customDateContainer = document.getElementById(
+        "customDateContainer"
+      );
+
+      const startDateInput = document.getElementById("startDate");
+      const endDateInput = document.getElementById("endDate");
 
       // Checkbox elements
       const showGoogleCheckbox = document.getElementById("showGoogle");
@@ -1295,7 +1469,11 @@
               );
               allLatLngsForBounds.push(nextBoundaryLatLng);
 
-              if (type == "mixed" && prevLoc.oldLocation && POST_PROCESS_DEBUG) {
+              if (
+                type == "mixed" &&
+                prevLoc.oldLocation &&
+                POST_PROCESS_DEBUG
+              ) {
                 interpolationBoundaryMarkers["debug"].prev = L.marker(
                   [prevLoc.oldLocation.latitude, prevLoc.oldLocation.longitude],
                   {
@@ -1346,7 +1524,11 @@
                   prevLoc.oldLocation.longitude,
                 ]);
               }
-              if (type == "mixed" && nextLoc.oldLocation && POST_PROCESS_DEBUG) {
+              if (
+                type == "mixed" &&
+                nextLoc.oldLocation &&
+                POST_PROCESS_DEBUG
+              ) {
                 interpolationBoundaryMarkers["debug"].next = L.marker(
                   [nextLoc.oldLocation.latitude, nextLoc.oldLocation.longitude],
                   {
@@ -1639,6 +1821,14 @@
 
         if (timeRangeSelect.value === "all") {
           currentDeviceLocations = { ...allDeviceLocations };
+        } else if (timeRangeSelect.value === "custom") {
+          for (const type in allDeviceLocations) {
+            currentDeviceLocations[type] = allDeviceLocations[type].filter(
+              (loc) =>
+                startDateInput.valueAsNumber / 1000 <= loc.timestamp &&
+                loc.timestamp <= endDateInput.valueAsNumber / 1000
+            );
+          }
         } else {
           for (const type in allDeviceLocations) {
             currentDeviceLocations[type] = allDeviceLocations[type].filter(
@@ -1683,10 +1873,60 @@
       });
 
       timeRangeSelect.addEventListener("change", () => {
+        if (timeRangeSelect.value === "custom") {
+          customDateContainer.style.display = "flex";
+        } else {
+          customDateContainer.style.display = "none";
+        }
         if (selectedDeviceHash) {
           applyTimeRangeFilter(); // Apply the filter based on current data
         }
       });
+
+      dateInput = () => {
+        // Tarihlerin seçilip seçilmediğini kontrol et
+        if (!startDateInput.value || !endDateInput.value) {
+          loadingStatus.textContent =
+            "Lütfen başlangıç ve bitiş tarihlerini seçin.";
+          timeSlider.disabled = true;
+          refreshButton.disabled = true;
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          clearAllMarkers();
+          return;
+        } else if (startDateInput.value > endDateInput.value) {
+          loadingStatus.textContent =
+            "Başlangıç tarihi bitiş tarihinden büyük olamaz.";
+          timeSlider.disabled = true;
+          refreshButton.disabled = true;
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          clearAllMarkers();
+          return;
+        } else if (startDateInput.value === endDateInput.value) {
+          loadingStatus.textContent =
+            "Başlangıç ve bitiş tarihleri aynı olamaz.";
+          timeSlider.disabled = true;
+          refreshButton.disabled = true;
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          clearAllMarkers();
+          return;
+        } else if (!selectedDeviceHash) {
+          loadingStatus.textContent =
+            "Lütfen bir cihaz seçin.";
+          timeSlider.disabled = true;
+          refreshButton.disabled = true;
+          map.setView([36.7782803, 34.6346764], 12); // Reset to default view
+          clearAllMarkers();
+          return;
+        } else if (selectedDeviceHash) {
+          loadingStatus.textContent =
+            "";
+
+          applyTimeRangeFilter(); // Apply the filter based on current data
+        }
+      };
+
+      startDateInput.addEventListener("change", dateInput);
+      endDateInput.addEventListener("change", dateInput);
 
       timeSlider.addEventListener("input", (event) => {
         updateMapForTimestamp(parseInt(event.target.value));
@@ -1746,6 +1986,11 @@
       // Initial fetch of devices when the page loads
       document.addEventListener("DOMContentLoaded", () => {
         fetchDevices();
+        if (timeRangeSelect.value === "custom") {
+          customDateContainer.style.display = "flex";
+        } else {
+          customDateContainer.style.display = "none";
+        }
         // Set initial map view to Mersin before any data is loaded
         map.setView([36.7782803, 34.6346764], 12);
       });
